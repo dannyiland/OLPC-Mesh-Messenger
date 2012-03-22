@@ -1,0 +1,8 @@
+[Activity]
+name = Disaster
+activity_version = 1
+service_name = edu.ucsb.cs.Disaster
+bundle_id = edu.ucsb.cs.Disaster
+exec = sugar-activity disaster.DisasterActivity 
+icon = activity-disaster
+license = GPLv2+
