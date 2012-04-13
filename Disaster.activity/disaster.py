@@ -51,21 +51,61 @@ SCOPE_INVITE_ONLY = "invite"  # shouldn't be shown in UI, it's implicit
 SCOPE_NEIGHBORHOOD = "public"
 DEBUG = True
 MESSAGES_CREATED = 1000
+MY_XO= "this-xo-name"
+MY_GPG_DIGEST="my-gpg-digest" # NEED AS QR Code and String.
+MY_NAME = "Danny Iland"
+
+# Message format:
+# Title
+# Message Data
+# Location
+# Origin Date/Time
+# Category : Including Message Type and Message Category
+# Web-connection URL: i.e.Ushahidi URL, email address, API to POST to.
+# Public/Private
+# Signature
+# xos-touched: start with xo_name. Each XO adds itself.
+# Destination: GPG public key digest of person or group you are sending to.
+# Source: GPG public key digest of you
+# Source name: String identifying sender.
+
+
 
 def messageCodec(score_or_opaque, pack_or_unpack):
     message = score_or_opaque
     if pack_or_unpack:
-        return (message.title, message.message, message.location, message.time, message.category)
+        return (message.title, message.message, message.location, message.time, message.category, message.url, message.public, message.signature, message.xos, message.dest, message.source, message.source_name)
     else:
         return ImmutableMessage(title=message[0],
-                              message=message[1],
-                              location=message[2],
-                              time=message[3],
-                              category=message[4],)
+                                message=message[1],
+                                location=message[2],
+                                time=message[3],
+                                category=message[4],
+                                url=message[5],
+                                public=message[6], 
+                                signature=message[7],
+                                xos=message[8],
+                                dest=message[9],
+                                source=message[10],source_name=message[11])
 
+# Title
+# Message Data
+# Location
+# Origin Date/Time
+# Category : Including Message Type and Message Category
+# Web-connection URL: i.e.Ushahidi URL, email address, API to POST to.
+# Public/Private
+# Signature
+# xos-touched: start with xo_name. Each XO adds itself.
+# Destination: GPG public key digest of person or group you are sending to.
+# Source: GPG public key digest of you
+# Source name: String identifying sender.
+
+# TO_CREATE: MY_XO, MY_GPG_DIGEST
 class ImmutableMessage(object):
-    def __init__(self, title="", message="", location="", time="", category=""):
+    def __init__(self, title="", message="", location="", time="", category="", url="",public=True,signature="",xos= MY_XO ,dest="",source= MY_GPG_DIGEST , source_name= MY_NAME ):
         hashing = hashlib.sha256()
+        # Hash is of Title,Message,Location
         hashing.update(title)
         hashing.update(message)
         hashing.update(location)
@@ -75,6 +115,13 @@ class ImmutableMessage(object):
         self.location = location
         self.time = time
         self.category = category
+        self.url=url
+        self.public=public
+        self.signature=signature
+        self.xos= xos
+        self.dest=dest
+        self.source= source
+        self.source_name= source_name
          
 class DisasterActivity(groupthink.sugar_tools.GroupActivity):
     
@@ -90,7 +137,7 @@ class DisasterActivity(groupthink.sugar_tools.GroupActivity):
                     message = "".join( [random.choice(string.letters) for i in xrange(512)] )
                     location = "".join( [random.choice(string.letters) for i in xrange(32)] )
                     category = random.choice([1,2,3,4,5])
-                    self.displayMessage(self.createEntry(title, message, location, category))
+                    self.createMessage(self.createEntry(title, message, location, category))
                     
             elif name == 'Create 500 messages':
                 for n in xrange(500):
@@ -98,21 +145,21 @@ class DisasterActivity(groupthink.sugar_tools.GroupActivity):
                     message = "".join( [random.choice(string.letters) for i in xrange(512)] )
                     location = "".join( [random.choice(string.letters) for i in xrange(32)] )
                     category = random.choice([1,2,3,4,5])
-                    self.displayMessage(self.createEntry(title, message, location, category))
+                    self.createMessage(self.createEntry(title, message, location, category))
             elif name == 'Create 100 messages':
                 for n in xrange(100):
                     title = "message " + str(n)
                     message = "".join( [random.choice(string.letters) for i in xrange(512)] )
                     location = "".join( [random.choice(string.letters) for i in xrange(32)] )
                     category = random.choice([1,2,3,4,5])
-                    self.displayMessage(self.createEntry(title, message, location, category))
+                    self.createMessage(self.createEntry(title, message, location, category))
 
             elif name == 'Create 1 message':
                 title = "message"
                 message = "".join( [random.choice(string.letters) for i in xrange(512)] )
                 location = "".join( [random.choice(string.letters) for i in xrange(32)] )
                 category = random.choice([1,2,3,4,5])
-                self.displayMessage(self.createEntry(title, message, location, category))
+                self.createMessage(self.createEntry(title, message, location, category))
             elif name == 'Remove file':
                 try:
                     os.remove(os.path.join(self.get_activity_root(), 'data', 'messagesAndCures.cpkle'))
@@ -122,7 +169,7 @@ class DisasterActivity(groupthink.sugar_tools.GroupActivity):
                 #self.cloud.messages = groupthink.CausalDict(value_translator=messageCodec)
                 #self.cloud.cures = groupthink.CausalDict()
                 #for message in self.cloud.messages:
-                #    self.displayMessage(message)
+                #    self.createMessage(message)
             
 
     # Get lat/long from descriptive name, using Google Maps Geocoder. Return (False,False) if unknown.
@@ -261,9 +308,10 @@ class DisasterActivity(groupthink.sugar_tools.GroupActivity):
     def HTTPshowCures(self, cureDict):
         for hashes, entry in self.entryDict.items():
             if hashes in cureDict.keys():
-                self.tableModel.set_value(entry, 5, "Yes - " + cureDict[hashes])
+                self.tableModel.set_value(entry, 5, cureDict[hashes])
 
     # Writes all current messages and cures to a file
+    # Should figure out a way to append if possible, flat file? The cpkle on app close. Do battery tests with each.
     def addToFile(self, lock):
         lock.acquire()
         #logger.debug("Lock aquired, saving to data/messagesAndCures.cpkle")
@@ -285,7 +333,7 @@ class DisasterActivity(groupthink.sugar_tools.GroupActivity):
                 logger.debug("Dict size is now " + str(self.dict_size))
         self.addToFile(self.lock)
         for k,v in dict_added.items():
-            self.displayMessage(v)
+            self.createMessage(v)
 
     #Called when entries are added to the cures list by neighbors
     def newCures_cb(self, dict_added, dict_removed):
@@ -307,7 +355,8 @@ class DisasterActivity(groupthink.sugar_tools.GroupActivity):
             self.HTTPgetCures()
         return True
 
-    def displayMessage(self, message, myFilter=None):
+    # Create an entry in the entryDict that holds table Model objects for a message.
+    def createMessage(self, message, myFilter=None):
 #        for key,value in self.cloud.messages.items():
         newEntry = self.tableModel.insert_before(None, None)
         self.tableModel.set_value(newEntry, 0, message.title)
@@ -322,7 +371,8 @@ class DisasterActivity(groupthink.sugar_tools.GroupActivity):
         self.treeView.expand_all()   
         self.entryDict[message.hashed] = newEntry
 
-    # Example creation with auto-detected time
+    # Creates a message, and puts it in self.cloud.messages.
+    # creation with auto-detected time
     def createEntry(self, title="", message="", location="", category=""):
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         newMessage = ImmutableMessage(title, message, location, now, category)
@@ -339,36 +389,50 @@ class DisasterActivity(groupthink.sugar_tools.GroupActivity):
                             gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT,
                             (gtk.STOCK_OK, gtk.RESPONSE_ACCEPT))
     
+        from = gtk.Label("From:  ")
+        fromText = model[row][0]
+        fromTextLabel = gtk.Label(fromText)
+        fromBox = gtk.HBox()
+        fromBox.pack_start(from)
+        fromBox.pack_start(fromTextLabel)        
+        
+        to = gtk.Label("To:  ")
+        toText = model[row][1]
+        toTextLabel = gtk.Label(toText)
+        toBox = gtk.HBox()
+        toBox.pack_start(to)
+        toBox.pack_start(toTextLabel)  
+        
         title = gtk.Label("Title:  ")
-        titleText = model[row][0]
+        titleText = model[row][2]
         titleTextLabel = gtk.Label(titleText)
         titleBox = gtk.HBox()
         titleBox.pack_start(title)
-        titleBox.pack_start(titleTextLabel)        
-        
+        titleBox.pack_start(titleTextLabel)  
+
         message = gtk.Label("Message:  ")
-        messageText = model[row][1]
+        messageText = model[row][3]
         messageTextLabel = gtk.Label(messageText)
         messageBox = gtk.HBox()
         messageBox.pack_start(message)
         messageBox.pack_start(messageTextLabel)
 
         location = gtk.Label("Location:  ")
-        locationText = model[row][2]
+        locationText = model[row][4]
         locationTextLabel = gtk.Label(locationText)
         locationBox = gtk.HBox()
         locationBox.pack_start(location)
         locationBox.pack_start(locationTextLabel)
 
         time = gtk.Label("Time:     ")
-        timeText = model[row][3]
+        timeText = model[row][5]
         timeTextLabel = gtk.Label(timeText)
         timeBox = gtk.HBox()
         timeBox.pack_start(time)
         timeBox.pack_start(timeTextLabel)
 
         categoryLabel = gtk.Label("Category: ")
-        sharedText = model[row][4]
+        sharedText = model[row][6]
         sharedTextLabel = gtk.Label(sharedText)
         sharedBox = gtk.HBox()
         sharedBox.pack_start(categoryLabel)
@@ -398,7 +462,7 @@ class DisasterActivity(groupthink.sugar_tools.GroupActivity):
         title.set_text("")
         message.get_buffer().delete(message.get_buffer().get_start_iter(), message.get_buffer().get_end_iter())
         location.set_text("")
-        self.displayMessage(newEntry)
+        self.createMessage(newEntry)
 
     def early_setup(self):
         self.entryDict = dict()
@@ -458,19 +522,26 @@ class DisasterActivity(groupthink.sugar_tools.GroupActivity):
         self.allMessagesButton.set_tooltip(toolTips, 'View all messages')
         self.allMessagesButton.connect("clicked", self.allMessages)
 
-        self.settingsButton = gtk.ToolButton(None, "Settings")
-        self.settingsButton.set_expand(False)
-        self.settingsButton.set_tooltip(toolTips, 'Me too')
-        self.settingsButton.connect("clicked", self.settings)
+        self.sendButton = gtk.ToolButton(None, "Send Message")
+        self.sendButton.set_expand(False)
+        self.sendButton.set_tooltip(toolTips, 'C')
+        self.sendButton.connect("clicked", self.send)
        
         self.helpButton = gtk.ToolButton(None, "Help")
         self.helpButton.set_expand(False)
         self.helpButton.set_tooltip(toolTips, 'How to use this activity')
         self.helpButton.connect("clicked", self.help)
-        toolBar.insert(self.myMessagesButton, 0)
-        toolBar.insert(self.allMessagesButton, 1)
-        toolBar.insert(self.settingsButton, 2)
-        toolBar.insert(self.helpButton, 3)
+      
+        self.settingsButton = gtk.ToolButton(None, "Settings")
+        self.settingsButton.set_expand(False)
+        self.settingsButton.set_tooltip(toolTips, 'Setup this activity')
+        self.settingsButton.connect("clicked", self.settings)
+
+        toolBar.insert(self.sendButton, 0)
+        toolBar.insert(self.myMessagesButton, 1)
+        toolBar.insert(self.allMessagesButton, 2)
+        toolBar.insert(self.settingsButton, 3)
+        toolBar.insert(self.helpButton, 4)
         
         # Entry fields
         titleBox = gtk.HBox()
@@ -736,12 +807,23 @@ class DisasterActivity(groupthink.sugar_tools.GroupActivity):
 
     def help(self, widget):
         logger.debug('clicked help.')
-        
+
+    def send(self, widget):
+        self.layout.remove(self.topBox)
+        self.layout.remove(self.bottomBox)
+        self.layout.attach(self.topBox, 0,1,1,9)
+
+
+    def settings(self, widget):
+        logger.debug('clicked settings.')
+
     def myMessages(self, widget):
         logger.debug('clicked myMessages.')
 
     def allMessages(self, widget):
         logger.debug('clicked allMessages.')
+        self.layout.attach(self.topBox, 0, 1, 1, 4)
+        self.layout.attach(self.bottomBox, 0, 1, 4, 9)
         self.layout.remove(self.topBox)
         self.layout.remove(self.bottomBox)
 
